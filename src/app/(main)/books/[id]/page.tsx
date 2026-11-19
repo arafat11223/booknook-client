@@ -1,19 +1,20 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, use, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import {
   ArrowLeft,
   BookOpen,
   CalendarDays,
   Library,
+  LoaderCircle,
   UserRound,
 } from "lucide-react";
 
 import AuthGuard from "@/components/auth/auth-guard";
 import { apiRequest } from "@/lib/api";
+import { authClient } from "@/lib/auth-client";
 import type { Book } from "@/types/book";
 
 type BookResponse = {
@@ -22,11 +23,42 @@ type BookResponse = {
   data: Book;
 };
 
-export default function BookDetailsPage() {
-  const params = useParams<{ id: string }>();
+type BorrowResponse = {
+  success: boolean;
+  message: string;
+  data: {
+    _id: string;
+    bookId: string;
+    status: "borrowed" | "returned";
+  };
+};
+
+type BorrowListResponse = {
+  success: boolean;
+  message: string;
+  data: {
+    _id: string;
+    bookId: string;
+    status: "borrowed" | "returned";
+  }[];
+};
+
+type BookDetailsContentProps = {
+  params: Promise<{ id: string }>;
+};
+
+function BookDetailsContent({
+  params,
+}: BookDetailsContentProps) {
+  const { id } = use(params);
+  const { data: session } = authClient.useSession();
+
   const [book, setBook] = useState<Book | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isBorrowing, setIsBorrowing] = useState(false);
+  const [isAlreadyBorrowed, setIsAlreadyBorrowed] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   useEffect(() => {
     const fetchBook = async () => {
@@ -35,7 +67,7 @@ export default function BookDetailsPage() {
         setError("");
 
         const response = await apiRequest<BookResponse>(
-          `/books/${params.id}`
+          `/books/${id}`
         );
 
         setBook(response.data);
@@ -50,10 +82,80 @@ export default function BookDetailsPage() {
       }
     };
 
-    if (params.id) {
+    if (id) {
       fetchBook();
     }
-  }, [params.id]);
+  }, [id]);
+
+  useEffect(() => {
+    const checkBorrowStatus = async () => {
+      if (!session?.user?.id || !id) return;
+
+      try {
+        const response = await apiRequest<BorrowListResponse>(
+          "/borrows",
+          {
+            authenticated: true,
+          }
+        );
+
+        setIsAlreadyBorrowed(
+          response.data.some(
+            (borrow) =>
+              borrow.bookId === id &&
+              borrow.status === "borrowed"
+          )
+        );
+      } catch {
+        setIsAlreadyBorrowed(false);
+      }
+    };
+
+    checkBorrowStatus();
+  }, [id, session?.user?.id]);
+
+  const handleBorrow = async () => {
+    if (!book || isBorrowing) return;
+
+    try {
+      setIsBorrowing(true);
+      setError("");
+      setSuccess("");
+
+      const response = await apiRequest<BorrowResponse>(
+        "/borrows",
+        {
+          method: "POST",
+          authenticated: true,
+          body: JSON.stringify({
+            bookId: book._id,
+          }),
+        }
+      );
+
+      setBook((previousBook) =>
+        previousBook
+          ? {
+              ...previousBook,
+              availableCopies: previousBook.availableCopies - 1,
+            }
+          : previousBook
+      );
+
+      setIsAlreadyBorrowed(true);
+      setSuccess(response.message);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to borrow this book."
+      );
+    } finally {
+      setIsBorrowing(false);
+    }
+  };
+
+  const isOutOfStock = book?.availableCopies === 0;
 
   return (
     <AuthGuard>
@@ -69,7 +171,10 @@ export default function BookDetailsPage() {
 
           {isLoading && (
             <div className="flex min-h-80 flex-col items-center justify-center">
-              <div className="size-10 animate-spin rounded-full border-4 border-green-700 border-t-transparent" />
+              <LoaderCircle
+                size={36}
+                className="animate-spin text-green-700"
+              />
 
               <p className="mt-4 text-sm text-slate-500">
                 Loading book details...
@@ -77,7 +182,7 @@ export default function BookDetailsPage() {
             </div>
           )}
 
-          {!isLoading && error && (
+          {!isLoading && error && !book && (
             <div className="rounded-xl border border-red-100 bg-white p-8 text-center">
               <BookOpen
                 size={40}
@@ -101,7 +206,7 @@ export default function BookDetailsPage() {
             </div>
           )}
 
-          {!isLoading && !error && book && (
+          {!isLoading && book && (
             <div className="grid gap-10 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:grid-cols-2 md:p-10">
               <div className="overflow-hidden rounded-xl bg-slate-100">
                 <img
@@ -189,16 +294,57 @@ export default function BookDetailsPage() {
                   </div>
                 </div>
 
+                {success && (
+                  <div
+                    role="status"
+                    className="mt-5 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700"
+                  >
+                    {success}
+                  </div>
+                )}
+
+                {error && book && (
+                  <div
+                    role="alert"
+                    className="mt-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+                  >
+                    {error}
+                  </div>
+                )}
+
                 <button
                   type="button"
-                  disabled
-                  className="mt-8 w-full cursor-not-allowed rounded-lg bg-green-700 px-5 py-3.5 text-sm font-semibold text-white opacity-70"
+                  onClick={handleBorrow}
+                  disabled={
+                    isBorrowing ||
+                    isOutOfStock ||
+                    isAlreadyBorrowed
+                  }
+                  className="mt-8 flex w-full items-center justify-center gap-2 rounded-lg bg-green-700 px-5 py-4 text-sm font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                 >
-                  Borrow Book
+                  {isBorrowing ? (
+                    <>
+                      <LoaderCircle
+                        size={18}
+                        className="animate-spin"
+                      />
+                      Borrowing...
+                    </>
+                  ) : isAlreadyBorrowed ? (
+                    "Already Borrowed"
+                  ) : isOutOfStock ? (
+                    "Out of Stock"
+                  ) : (
+                    "Borrow Book"
+                  )}
                 </button>
 
                 <p className="mt-2 text-center text-xs text-slate-400">
-                  Borrow functionality will be available soon.
+                  {isAlreadyBorrowed
+                    ? "You have already borrowed this book."
+                    : isOutOfStock
+                      ? "No copies are currently available."
+                      : "You can borrow this book for 14 days."}
                 </p>
               </div>
             </div>
@@ -206,5 +352,24 @@ export default function BookDetailsPage() {
         </div>
       </main>
     </AuthGuard>
+  );
+}
+
+export default function BookDetailsPage({
+  params,
+}: BookDetailsContentProps) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-80 items-center justify-center">
+          <LoaderCircle
+            size={36}
+            className="animate-spin text-green-700"
+          />
+        </div>
+      }
+    >
+      <BookDetailsContent params={params} />
+    </Suspense>
   );
 }
