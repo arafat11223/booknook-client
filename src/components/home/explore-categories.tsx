@@ -1,4 +1,7 @@
 
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   BookOpen,
@@ -9,37 +12,35 @@ import {
   ArrowRight,
 } from "lucide-react";
 
+import { apiRequest } from "@/lib/api";
+import type { Book, BooksResponse } from "@/types/book";
+
 const categories = [
   {
-    id: 1,
     name: "Fiction",
     description: "Explore stories, novels, and imaginative worlds.",
     icon: BookOpen,
     color: "bg-emerald-50 text-emerald-700",
   },
   {
-    id: 2,
     name: "Science",
     description: "Discover scientific knowledge and new ideas.",
     icon: FlaskConical,
     color: "bg-blue-50 text-blue-700",
   },
   {
-    id: 3,
     name: "History",
     description: "Explore historical events and civilizations.",
     icon: Landmark,
     color: "bg-amber-50 text-amber-700",
   },
   {
-    id: 4,
     name: "Kids",
     description: "Find fun and educational books for children.",
     icon: Baby,
     color: "bg-pink-50 text-pink-700",
   },
   {
-    id: 5,
     name: "Others",
     description: "Discover books from different categories.",
     icon: MoreHorizontal,
@@ -48,6 +49,21 @@ const categories = [
 ];
 
 export default function ExploreCategories() {
+  const [books, setBooks] = useState<Book[]>([]);
+
+  useEffect(() => {
+    const fetchBooks = async () => {
+      try {
+        const response = await apiRequest<BooksResponse>("/books");
+        setBooks(response.data);
+      } catch {
+        setBooks([]);
+      }
+    };
+
+    fetchBooks();
+  }, []);
+
   return (
     <section className="bg-slate-50 py-16 sm:py-20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -69,9 +85,13 @@ export default function ExploreCategories() {
           {categories.map((category) => {
             const Icon = category.icon;
 
+            const bookCount = books.filter(
+              (book) => book.category === category.name
+            ).length;
+
             return (
               <article
-                key={category.id}
+                key={category.name}
                 className="group rounded-xl border border-slate-200 bg-white p-6 transition-all duration-300 hover:-translate-y-1 hover:border-green-200 hover:shadow-lg"
               >
                 <div
@@ -86,6 +106,10 @@ export default function ExploreCategories() {
 
                 <p className="mt-2 min-h-14 text-sm leading-6 text-slate-600">
                   {category.description}
+                </p>
+
+                <p className="mt-3 text-xs font-medium text-slate-500">
+                  {bookCount} {bookCount === 1 ? "Book" : "Books"} Available
                 </p>
 
                 <Link
