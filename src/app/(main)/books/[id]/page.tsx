@@ -212,7 +212,7 @@ function BookDetailsContent({
                 <img
                   src={book.image}
                   alt={book.title}
-                  className="h-full max-h-[520px] min-h-80 w-full object-cover"
+                  className="h-full max-h-130 min-h-80 w-full object-cover"
                 />
               </div>
 

@@ -1,10 +1,7 @@
+
 import { authClient } from "@/lib/auth-client";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ||
-  (process.env.NODE_ENV === "production"
-    ? "https://booknote-server-cjcu.onrender.com"
-    : "http://localhost:5000");
+const API_BASE_URL = "/api/backend";
 
 type ApiOptions = Omit<RequestInit, "headers"> & {
   headers?: HeadersInit;
@@ -37,10 +34,18 @@ export async function apiRequest<T>(
     requestHeaders.set("Authorization", `Bearer ${data.token}`);
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...fetchOptions,
-    headers: requestHeaders,
-  });
+  const normalizedEndpoint = endpoint.startsWith("/")
+    ? endpoint
+    : `/${endpoint}`;
+
+  const response = await fetch(
+    `${API_BASE_URL}${normalizedEndpoint}`,
+    {
+      ...fetchOptions,
+      headers: requestHeaders,
+      credentials: "include",
+    }
+  );
 
   const result = await response.json();
 
